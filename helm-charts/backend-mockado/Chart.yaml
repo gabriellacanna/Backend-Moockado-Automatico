@@ -1,0 +1,31 @@
+apiVersion: v2
+name: backend-mockado
+description: Backend Mockado Automático - Automatic mock backend generation for Istio/ASM environments
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+home: https://github.com/gabriellacanna/Backend-Moockado-Automatico
+sources:
+  - https://github.com/gabriellacanna/Backend-Moockado-Automatico
+maintainers:
+  - name: Backend Mockado Team
+    email: team@backend-mockado.com
+keywords:
+  - istio
+  - service-mesh
+  - wiremock
+  - mocking
+  - testing
+  - canary
+  - envoy
+annotations:
+  category: Testing
+dependencies:
+  - name: redis
+    version: "17.15.6"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled
+  - name: wiremock
+    version: "1.0.0"
+    repository: "file://./charts/wiremock"
+    condition: wiremock.enabled

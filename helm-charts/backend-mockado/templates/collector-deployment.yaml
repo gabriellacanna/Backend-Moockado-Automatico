@@ -1,0 +1,124 @@
+{{- if .Values.collector.enabled }}
+{{- include "backend-mockado.validateConfig" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-collector
+  labels:
+    {{- include "backend-mockado.collector.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  replicas: {{ .Values.collector.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "backend-mockado.collector.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "backend-mockado.collector.selectorLabels" . | nindent 8 }}
+        {{- with .Values.commonLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/collector-configmap.yaml") . | sha256sum }}
+        {{- with .Values.commonAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "backend-mockado.imagePullSecrets" . }}
+      serviceAccountName: {{ include "backend-mockado.collector.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.collector.securityContext | nindent 8 }}
+      containers:
+        - name: collector
+          image: "{{ .Values.collector.image.registry }}/{{ .Values.collector.image.repository }}:{{ .Values.collector.image.tag }}"
+          imagePullPolicy: {{ .Values.collector.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.collector.service.ports.http }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.collector.service.ports.grpc }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.collector.service.ports.metrics }}
+              protocol: TCP
+          env:
+            - name: COLLECTOR_HOST
+              value: "0.0.0.0"
+            - name: COLLECTOR_HTTP_PORT
+              value: "{{ .Values.collector.service.ports.http }}"
+            - name: COLLECTOR_GRPC_PORT
+              value: "{{ .Values.collector.service.ports.grpc }}"
+            - name: COLLECTOR_METRICS_PORT
+              value: "{{ .Values.collector.service.ports.metrics }}"
+            - name: COLLECTOR_LOG_LEVEL
+              value: "{{ .Values.collector.config.logLevel }}"
+            - name: COLLECTOR_BODY_SIZE_LIMIT
+              value: "{{ .Values.collector.config.bodySizeLimit }}"
+            - name: COLLECTOR_ENABLE_SAMPLING
+              value: "{{ .Values.collector.config.enableSampling }}"
+            - name: COLLECTOR_DEFAULT_SAMPLE_RATE
+              value: "{{ .Values.collector.config.defaultSampleRate }}"
+            - name: COLLECTOR_DEDUP_TTL
+              value: "{{ .Values.collector.config.dedupTtl }}"
+            - name: COLLECTOR_BATCH_SIZE
+              value: "{{ .Values.collector.config.batchSize }}"
+            - name: COLLECTOR_BATCH_TIMEOUT
+              value: "{{ .Values.collector.config.batchTimeout }}"
+            - name: COLLECTOR_MAX_CONCURRENT_REQUESTS
+              value: "{{ .Values.collector.config.maxConcurrentRequests }}"
+            - name: COLLECTOR_ENABLE_METRICS
+              value: "{{ .Values.collector.config.enableMetrics }}"
+            - name: COLLECTOR_REDIS_URL
+              value: "{{ include "backend-mockado.redisUrl" . }}"
+            {{- if .Values.redis.auth.enabled }}
+            - name: COLLECTOR_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "backend-mockado.fullname" . }}-redis
+                  key: redis-password
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.collector.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.collector.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.collector.resources | nindent 12 }}
+          securityContext:
+            {{- include "backend-mockado.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+            - name: logs
+              mountPath: /app/logs
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "backend-mockado.fullname" . }}-collector-config
+        - name: data
+          {{- if .Values.collector.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "backend-mockado.fullname" . }}-collector-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+      {{- include "backend-mockado.nodeSelector" .Values.collector.nodeSelector }}
+      {{- include "backend-mockado.tolerations" .Values.collector.tolerations }}
+      {{- include "backend-mockado.affinity" .Values.collector.affinity }}
+{{- end }}

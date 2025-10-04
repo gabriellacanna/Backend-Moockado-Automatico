@@ -1,0 +1,27 @@
+{{- if .Values.namespaceOverride }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespaceOverride }}
+  labels:
+    {{- include "backend-mockado.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    # Istio injection
+    istio-injection: enabled
+    # Pod Security Standards
+    {{- if .Values.security.podSecurityStandards.enforce }}
+    pod-security.kubernetes.io/enforce: {{ .Values.security.podSecurityStandards.enforce }}
+    {{- end }}
+    {{- if .Values.security.podSecurityStandards.audit }}
+    pod-security.kubernetes.io/audit: {{ .Values.security.podSecurityStandards.audit }}
+    {{- end }}
+    {{- if .Values.security.podSecurityStandards.warn }}
+    pod-security.kubernetes.io/warn: {{ .Values.security.podSecurityStandards.warn }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
