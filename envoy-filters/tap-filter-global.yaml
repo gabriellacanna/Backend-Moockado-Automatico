@@ -1,0 +1,100 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: tap-filter-global
+  namespace: istio-system
+  labels:
+    app: backend-mockado-automatico
+    component: tap-filter
+spec:
+  # Aplica globalmente a todos os workloads
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+      listener:
+        filterChain:
+          filter:
+            name: "envoy.filters.network.http_connection_manager"
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.tap
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.tap.v3.Tap
+          common_config:
+            # Configuração do sink para enviar dados para o collector
+            config_source:
+              "@type": type.googleapis.com/envoy.extensions.common.tap.v3.CommonExtensionConfig
+              config_source:
+                "@type": type.googleapis.com/envoy.config.core.v3.ConfigSource
+                ads: {}
+                resource_api_version: V3
+              name: tap_config
+              type_urls:
+              - type.googleapis.com/envoy.extensions.common.tap.v3.TapConfig
+            # Sink para gRPC - envia para o collector
+            grpc_service:
+              envoy_grpc:
+                cluster_name: tap-collector-cluster
+              timeout: 1s
+          # Configuração do tap
+          tap_config:
+            match_config:
+              # Captura apenas requests HTTP
+              http_request_headers_match:
+                headers:
+                - name: ":method"
+                  string_match:
+                    exact: "POST"
+                - name: ":method"
+                  string_match:
+                    exact: "GET"
+                - name: ":method"
+                  string_match:
+                    exact: "PUT"
+                - name: ":method"
+                  string_match:
+                    exact: "DELETE"
+            # Configuração de output
+            output_config:
+              sinks:
+              - format: JSON_BODY_AS_BYTES
+                streaming_grpc:
+                  tap_id: "backend-mockado-tap"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: tap-collector-cluster
+  namespace: istio-system
+  labels:
+    app: backend-mockado-automatico
+    component: tap-cluster
+spec:
+  configPatches:
+  - applyTo: CLUSTER
+    match:
+      context: SIDECAR_INBOUND
+    patch:
+      operation: ADD
+      value:
+        name: tap-collector-cluster
+        type: STRICT_DNS
+        connect_timeout: 5s
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          cluster_name: tap-collector-cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: collector-service.backend-mockado.svc.cluster.local
+                    port_value: 50051
+        # Configuração para gRPC
+        typed_extension_protocol_options:
+          envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+            "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+            explicit_http_config:
+              http2_protocol_options: {}

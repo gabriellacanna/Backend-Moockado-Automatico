@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # WireMock para desenvolvimento local
+  wiremock:
+    image: wiremock/wiremock:latest
+    container_name: wiremock-dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./examples/wiremock-mappings:/home/wiremock/mappings
+    command: ["--global-response-templating", "--verbose"]
+    networks:
+      - mock-network
+
+  # Collector service para desenvolvimento
+  collector:
+    build:
+      context: ./collector
+      dockerfile: Dockerfile
+    container_name: collector-dev
+    ports:
+      - "9090:9090"
+      - "50051:50051"  # gRPC port
+    environment:
+      - WIREMOCK_URL=http://wiremock:8080
+      - LOG_LEVEL=DEBUG
+      - BODY_SIZE_LIMIT=8192
+      - ENABLE_SAMPLING=false
+    volumes:
+      - ./config:/app/config
+    depends_on:
+      - wiremock
+    networks:
+      - mock-network
+
+  # Redis para cache e deduplicação
+  redis:
+    image: redis:7-alpine
+    container_name: redis-dev
+    ports:
+      - "6379:6379"
+    networks:
+      - mock-network
+
+  # WireMock Loader service
+  wiremock-loader:
+    build:
+      context: ./wiremock-loader
+      dockerfile: Dockerfile
+    container_name: wiremock-loader-dev
+    environment:
+      - WIREMOCK_URL=http://wiremock:8080
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=DEBUG
+    depends_on:
+      - wiremock
+      - redis
+    networks:
+      - mock-network
+
+networks:
+  mock-network:
+    driver: bridge

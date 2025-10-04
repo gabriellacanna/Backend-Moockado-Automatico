@@ -1,0 +1,120 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tap-config
+  namespace: backend-mockado
+  labels:
+    app: backend-mockado-automatico
+    component: tap-config
+data:
+  tap-config.yaml: |
+    # Configuração dinâmica do tap filter
+    match_config:
+      # Configuração de matching mais flexível
+      or_match:
+        rules:
+        # Capturar APIs REST
+        - and_match:
+            rules:
+            - http_request_headers_match:
+                headers:
+                - name: ":method"
+                  string_match:
+                    safe_regex:
+                      google_re2: {}
+                      regex: "^(GET|POST|PUT|DELETE|PATCH)$"
+            - http_request_headers_match:
+                headers:
+                - name: ":path"
+                  string_match:
+                    safe_regex:
+                      google_re2: {}
+                      regex: "^/(api|v[0-9]+)/.*"
+        # Capturar GraphQL
+        - and_match:
+            rules:
+            - http_request_headers_match:
+                headers:
+                - name: ":method"
+                  string_match:
+                    exact: "POST"
+            - http_request_headers_match:
+                headers:
+                - name: ":path"
+                  string_match:
+                    exact: "/graphql"
+    
+    # Configuração de output
+    output_config:
+      sinks:
+      - format: JSON_BODY_AS_BYTES
+        streaming_grpc:
+          tap_id: "backend-mockado-configurable-tap"
+        # Configuração de buffer para melhor performance
+        buffered_streaming:
+          buffer_size_bytes: 16384
+          flush_timeout: 1s
+  
+  # Configuração de filtros por ambiente
+  filters.yaml: |
+    # Hosts para ignorar (não capturar)
+    ignored_hosts:
+      - "kubernetes.default.svc.cluster.local"
+      - "*.istio-system.svc.cluster.local"
+      - "*.kube-system.svc.cluster.local"
+      - "prometheus.*"
+      - "grafana.*"
+    
+    # Paths para ignorar
+    ignored_paths:
+      - "/health"
+      - "/healthz"
+      - "/ready"
+      - "/live"
+      - "/metrics"
+      - "/favicon.ico"
+      - "/.well-known/*"
+    
+    # Headers sensíveis para sanitizar
+    sensitive_headers:
+      - "authorization"
+      - "cookie"
+      - "x-api-key"
+      - "x-auth-token"
+      - "x-access-token"
+      - "x-refresh-token"
+      - "x-session-id"
+      - "x-user-token"
+    
+    # Campos sensíveis no body para sanitizar
+    sensitive_fields:
+      - "password"
+      - "senha"
+      - "token"
+      - "api_key"
+      - "apiKey"
+      - "access_token"
+      - "refresh_token"
+      - "credit_card"
+      - "creditCard"
+      - "cartao"
+      - "cpf"
+      - "cnpj"
+      - "ssn"
+      - "social_security"
+      - "phone"
+      - "telefone"
+      - "email"
+      - "birth_date"
+      - "data_nascimento"
+    
+    # Configurações de sampling por endpoint
+    sampling_rules:
+      - path_regex: "^/api/v1/health.*"
+        sample_rate: 0.01  # 1% para health checks
+      - path_regex: "^/api/v1/metrics.*"
+        sample_rate: 0.0   # 0% para métricas
+      - path_regex: "^/api/v1/payments.*"
+        sample_rate: 0.1   # 10% para pagamentos (crítico)
+      - path_regex: ".*"
+        sample_rate: 1.0   # 100% para todo o resto (padrão)

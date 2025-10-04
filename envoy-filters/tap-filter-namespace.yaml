@@ -1,0 +1,123 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: tap-filter-namespace
+  namespace: production  # Aplicar apenas no namespace específico
+  labels:
+    app: backend-mockado-automatico
+    component: tap-filter
+spec:
+  # Aplica apenas aos workloads no namespace atual
+  workloadSelector:
+    labels:
+      # Opcional: aplicar apenas a workloads com label específica
+      enable-mock-capture: "true"
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+      listener:
+        filterChain:
+          filter:
+            name: "envoy.filters.network.http_connection_manager"
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.tap
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.tap.v3.Tap
+          common_config:
+            # Sink para gRPC - envia para o collector
+            grpc_service:
+              envoy_grpc:
+                cluster_name: tap-collector-cluster
+              timeout: 1s
+          # Configuração do tap com filtros mais específicos
+          tap_config:
+            match_config:
+              # Filtros para capturar apenas tráfego relevante
+              and_match:
+                rules:
+                # Apenas métodos HTTP específicos
+                - http_request_headers_match:
+                    headers:
+                    - name: ":method"
+                      string_match:
+                        safe_regex:
+                          google_re2: {}
+                          regex: "^(GET|POST|PUT|DELETE|PATCH)$"
+                # Filtrar por paths específicos (opcional)
+                - http_request_headers_match:
+                    headers:
+                    - name: ":path"
+                      string_match:
+                        safe_regex:
+                          google_re2: {}
+                          regex: "^/(api|v1|v2)/.*"
+                # Excluir health checks e métricas
+                - not_match:
+                    http_request_headers_match:
+                      headers:
+                      - name: ":path"
+                        string_match:
+                          safe_regex:
+                            google_re2: {}
+                            regex: "^/(health|metrics|ready|live).*"
+            # Configuração de output com sampling
+            output_config:
+              sinks:
+              - format: JSON_BODY_AS_BYTES
+                streaming_grpc:
+                  tap_id: "backend-mockado-namespace-tap"
+                # Sampling para reduzir overhead (1 em cada 10 requests)
+                # Remover esta seção para capturar 100% do tráfego
+                # sampling:
+                #   numerator: 1
+                #   denominator: 10
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: tap-collector-cluster-namespace
+  namespace: production
+  labels:
+    app: backend-mockado-automatico
+    component: tap-cluster
+spec:
+  configPatches:
+  - applyTo: CLUSTER
+    match:
+      context: SIDECAR_INBOUND
+    patch:
+      operation: ADD
+      value:
+        name: tap-collector-cluster
+        type: STRICT_DNS
+        connect_timeout: 5s
+        lb_policy: ROUND_ROBIN
+        # Configurações de circuit breaker para proteger o collector
+        circuit_breakers:
+          thresholds:
+          - priority: DEFAULT
+            max_connections: 100
+            max_pending_requests: 50
+            max_requests: 200
+            max_retries: 3
+        load_assignment:
+          cluster_name: tap-collector-cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: collector-service.backend-mockado.svc.cluster.local
+                    port_value: 50051
+        # Configuração para gRPC com timeout
+        typed_extension_protocol_options:
+          envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+            "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+            explicit_http_config:
+              http2_protocol_options:
+                max_concurrent_streams: 100
+            common_http_protocol_options:
+              idle_timeout: 30s
