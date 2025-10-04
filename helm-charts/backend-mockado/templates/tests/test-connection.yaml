@@ -1,0 +1,82 @@
+{{- if .Values.tests.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "backend-mockado.fullname" . }}-test-connection"
+  labels:
+    {{- include "backend-mockado.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test-connection
+      image: "{{ .Values.tests.image.registry }}/{{ .Values.tests.image.repository }}:{{ .Values.tests.image.tag }}"
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Testing Backend Mockado Automático connections..."
+          
+          # Test Collector health
+          echo "Testing Collector health endpoint..."
+          curl -f http://{{ include "backend-mockado.fullname" . }}-collector:{{ .Values.collector.service.ports.http }}/health
+          echo "✓ Collector health check passed"
+          
+          # Test Collector readiness
+          echo "Testing Collector readiness endpoint..."
+          curl -f http://{{ include "backend-mockado.fullname" . }}-collector:{{ .Values.collector.service.ports.http }}/ready
+          echo "✓ Collector readiness check passed"
+          
+          # Test Collector metrics
+          echo "Testing Collector metrics endpoint..."
+          curl -f http://{{ include "backend-mockado.fullname" . }}-collector:{{ .Values.collector.service.ports.metrics }}/metrics
+          echo "✓ Collector metrics endpoint accessible"
+          
+          {{- if .Values.wireMockLoader.enabled }}
+          # Test WireMock Loader health
+          echo "Testing WireMock Loader health endpoint..."
+          curl -f http://{{ include "backend-mockado.fullname" . }}-wiremock-loader:{{ .Values.wireMockLoader.service.ports.http }}/health
+          echo "✓ WireMock Loader health check passed"
+          
+          # Test WireMock Loader readiness
+          echo "Testing WireMock Loader readiness endpoint..."
+          curl -f http://{{ include "backend-mockado.fullname" . }}-wiremock-loader:{{ .Values.wireMockLoader.service.ports.http }}/ready
+          echo "✓ WireMock Loader readiness check passed"
+          
+          # Test WireMock Loader metrics
+          echo "Testing WireMock Loader metrics endpoint..."
+          curl -f http://{{ include "backend-mockado.fullname" . }}-wiremock-loader:{{ .Values.wireMockLoader.service.ports.metrics }}/metrics
+          echo "✓ WireMock Loader metrics endpoint accessible"
+          {{- end }}
+          
+          {{- if .Values.wiremock.enabled }}
+          # Test WireMock health
+          echo "Testing WireMock health endpoint..."
+          curl -f http://{{ include "backend-mockado.fullname" . }}-wiremock:{{ .Values.wiremock.service.port }}/__admin/health
+          echo "✓ WireMock health check passed"
+          
+          # Test WireMock admin API
+          echo "Testing WireMock admin API..."
+          curl -f http://{{ include "backend-mockado.fullname" . }}-wiremock:{{ .Values.wiremock.service.port }}/__admin/mappings
+          echo "✓ WireMock admin API accessible"
+          {{- end }}
+          
+          echo "All connection tests passed successfully!"
+      securityContext:
+        {{- include "backend-mockado.containerSecurityContext" . | nindent 8 }}
+        # Allow network access for testing
+        readOnlyRootFilesystem: false
+  securityContext:
+    {{- include "backend-mockado.securityContext" . | nindent 4 }}
+{{- end }}

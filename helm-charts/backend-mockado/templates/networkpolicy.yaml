@@ -1,0 +1,210 @@
+{{- if .Values.security.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-collector
+  labels:
+    {{- include "backend-mockado.collector.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "backend-mockado.collector.selectorLabels" . | nindent 6 }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Permitir tráfego do Envoy sidecar (gRPC tap)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          istio-injection: enabled
+    ports:
+    - protocol: TCP
+      port: {{ .Values.collector.service.ports.grpc }}
+  
+  # Permitir tráfego de monitoramento (Prometheus)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: {{ .Values.collector.service.ports.metrics }}
+  
+  # Permitir health checks do Kubernetes
+  - from: []
+    ports:
+    - protocol: TCP
+      port: {{ .Values.collector.service.ports.http }}
+  
+  {{- with .Values.security.networkPolicy.ingress }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+  
+  egress:
+  # Permitir conexão com Redis
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+          app.kubernetes.io/instance: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 6379
+  
+  # Permitir DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  
+  {{- with .Values.security.networkPolicy.egress }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-wiremock-loader
+  labels:
+    {{- include "backend-mockado.wiremock-loader.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "backend-mockado.wiremock-loader.selectorLabels" . | nindent 6 }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Permitir tráfego de monitoramento (Prometheus)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: {{ .Values.wireMockLoader.service.ports.metrics }}
+  
+  # Permitir health checks do Kubernetes
+  - from: []
+    ports:
+    - protocol: TCP
+      port: {{ .Values.wireMockLoader.service.ports.http }}
+  
+  {{- with .Values.security.networkPolicy.ingress }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+  
+  egress:
+  # Permitir conexão com Redis
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+          app.kubernetes.io/instance: {{ .Release.Name }}
+    ports:
+    - protocol: TCP
+      port: 6379
+  
+  # Permitir conexão com WireMock
+  - to:
+    - podSelector:
+        matchLabels:
+          {{- include "backend-mockado.wiremock.selectorLabels" . | nindent 10 }}
+    ports:
+    - protocol: TCP
+      port: {{ .Values.wiremock.service.port }}
+  
+  # Permitir DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  
+  {{- with .Values.security.networkPolicy.egress }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-wiremock
+  labels:
+    {{- include "backend-mockado.wiremock.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "backend-mockado.wiremock.selectorLabels" . | nindent 6 }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Permitir tráfego do WireMock Loader
+  - from:
+    - podSelector:
+        matchLabels:
+          {{- include "backend-mockado.wiremock-loader.selectorLabels" . | nindent 10 }}
+    ports:
+    - protocol: TCP
+      port: {{ .Values.wiremock.service.port }}
+  
+  # Permitir tráfego de aplicações que usam os mocks
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          istio-injection: enabled
+    ports:
+    - protocol: TCP
+      port: {{ .Values.wiremock.service.port }}
+  
+  # Permitir health checks do Kubernetes
+  - from: []
+    ports:
+    - protocol: TCP
+      port: {{ .Values.wiremock.service.port }}
+  
+  {{- with .Values.security.networkPolicy.ingress }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+  
+  egress:
+  # Permitir DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  
+  {{- with .Values.security.networkPolicy.egress }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

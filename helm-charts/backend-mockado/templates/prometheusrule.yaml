@@ -1,0 +1,151 @@
+{{- if and .Values.monitoring.enabled .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}
+  {{- if .Values.monitoring.prometheusRule.namespace }}
+  namespace: {{ .Values.monitoring.prometheusRule.namespace }}
+  {{- end }}
+  labels:
+    {{- include "backend-mockado.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+  - name: backend-mockado.rules
+    rules:
+    {{- with .Values.monitoring.prometheusRule.rules }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    
+    # Regras adicionais específicas do Backend Mockado
+    - alert: BackendMockadoCollectorHighMemoryUsage
+      expr: |
+        (
+          container_memory_working_set_bytes{container="collector", pod=~"{{ include "backend-mockado.fullname" . }}-collector-.*"}
+          /
+          container_spec_memory_limit_bytes{container="collector", pod=~"{{ include "backend-mockado.fullname" . }}-collector-.*"}
+        ) * 100 > 90
+      for: 5m
+      labels:
+        severity: warning
+        component: collector
+      annotations:
+        summary: "Backend Mockado Collector high memory usage"
+        description: "Collector pod {{ "{{ $labels.pod }}" }} is using {{ "{{ $value | humanizePercentage }}" }} of its memory limit"
+    
+    - alert: BackendMockadoCollectorHighCPUUsage
+      expr: |
+        rate(container_cpu_usage_seconds_total{container="collector", pod=~"{{ include "backend-mockado.fullname" . }}-collector-.*"}[5m]) * 100 > 80
+      for: 5m
+      labels:
+        severity: warning
+        component: collector
+      annotations:
+        summary: "Backend Mockado Collector high CPU usage"
+        description: "Collector pod {{ "{{ $labels.pod }}" }} is using {{ "{{ $value | humanizePercentage }}" }} CPU"
+    
+    - alert: BackendMockadoWireMockLoaderDown
+      expr: |
+        up{job="backend-mockado-wiremock-loader"} == 0
+      for: 2m
+      labels:
+        severity: critical
+        component: wiremock-loader
+      annotations:
+        summary: "Backend Mockado WireMock Loader is down"
+        description: "WireMock Loader has been down for more than 2 minutes"
+    
+    - alert: BackendMockadoHighErrorRate
+      expr: |
+        (
+          rate(collector_requests_errors_total[5m])
+          /
+          rate(collector_requests_total[5m])
+        ) * 100 > 5
+      for: 2m
+      labels:
+        severity: warning
+        component: collector
+      annotations:
+        summary: "Backend Mockado high error rate"
+        description: "Error rate is {{ "{{ $value | humanizePercentage }}" }} over the last 5 minutes"
+    
+    - alert: BackendMockadoRedisConnectionFailed
+      expr: |
+        collector_redis_connection_errors_total > 0
+      for: 1m
+      labels:
+        severity: critical
+        component: collector
+      annotations:
+        summary: "Backend Mockado Redis connection failed"
+        description: "Collector cannot connect to Redis"
+    
+    - alert: BackendMockadoWireMockConnectionFailed
+      expr: |
+        wiremock_loader_wiremock_connection_errors_total > 0
+      for: 1m
+      labels:
+        severity: critical
+        component: wiremock-loader
+      annotations:
+        summary: "Backend Mockado WireMock connection failed"
+        description: "WireMock Loader cannot connect to WireMock"
+    
+    - alert: BackendMockadoQueueBacklog
+      expr: |
+        collector_queue_size > 1000
+      for: 5m
+      labels:
+        severity: warning
+        component: collector
+      annotations:
+        summary: "Backend Mockado queue backlog"
+        description: "Queue has {{ "{{ $value }}" }} pending items"
+    
+    - alert: BackendMockadoSlowProcessing
+      expr: |
+        histogram_quantile(0.95, rate(collector_processing_duration_seconds_bucket[5m])) > 5
+      for: 5m
+      labels:
+        severity: warning
+        component: collector
+      annotations:
+        summary: "Backend Mockado slow processing"
+        description: "95th percentile processing time is {{ "{{ $value }}" }} seconds"
+    
+    - alert: BackendMockadoPersistentVolumeSpaceRunningLow
+      expr: |
+        (
+          kubelet_volume_stats_available_bytes{persistentvolumeclaim=~"{{ include "backend-mockado.fullname" . }}-.*-data"}
+          /
+          kubelet_volume_stats_capacity_bytes{persistentvolumeclaim=~"{{ include "backend-mockado.fullname" . }}-.*-data"}
+        ) * 100 < 10
+      for: 5m
+      labels:
+        severity: warning
+        component: storage
+      annotations:
+        summary: "Backend Mockado persistent volume space running low"
+        description: "PVC {{ "{{ $labels.persistentvolumeclaim }}" }} has only {{ "{{ $value | humanizePercentage }}" }} space left"
+    
+    - alert: BackendMockadoTooManyRestarts
+      expr: |
+        increase(kube_pod_container_status_restarts_total{container=~"collector|wiremock-loader|wiremock", pod=~"{{ include "backend-mockado.fullname" . }}-.*"}[1h]) > 3
+      for: 0m
+      labels:
+        severity: warning
+        component: "{{ "{{ $labels.container }}" }}"
+      annotations:
+        summary: "Backend Mockado container restarting too frequently"
+        description: "Container {{ "{{ $labels.container }}" }} in pod {{ "{{ $labels.pod }}" }} has restarted {{ "{{ $value }}" }} times in the last hour"
+{{- end }}

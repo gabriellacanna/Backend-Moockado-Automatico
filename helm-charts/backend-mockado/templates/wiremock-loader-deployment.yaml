@@ -1,0 +1,120 @@
+{{- if .Values.wireMockLoader.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-wiremock-loader
+  labels:
+    {{- include "backend-mockado.wiremock-loader.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  replicas: {{ .Values.wireMockLoader.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "backend-mockado.wiremock-loader.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "backend-mockado.wiremock-loader.selectorLabels" . | nindent 8 }}
+        {{- with .Values.commonLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/wiremock-loader-configmap.yaml") . | sha256sum }}
+        {{- with .Values.commonAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "backend-mockado.imagePullSecrets" . }}
+      serviceAccountName: {{ include "backend-mockado.wiremock-loader.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.wireMockLoader.securityContext | nindent 8 }}
+      containers:
+        - name: wiremock-loader
+          image: "{{ .Values.wireMockLoader.image.registry }}/{{ .Values.wireMockLoader.image.repository }}:{{ .Values.wireMockLoader.image.tag }}"
+          imagePullPolicy: {{ .Values.wireMockLoader.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.wireMockLoader.service.ports.http }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.wireMockLoader.service.ports.metrics }}
+              protocol: TCP
+          env:
+            - name: WIREMOCK_LOADER_HOST
+              value: "0.0.0.0"
+            - name: WIREMOCK_LOADER_PORT
+              value: "{{ .Values.wireMockLoader.service.ports.http }}"
+            - name: WIREMOCK_LOADER_METRICS_PORT
+              value: "{{ .Values.wireMockLoader.service.ports.metrics }}"
+            - name: WIREMOCK_LOADER_LOG_LEVEL
+              value: "{{ .Values.wireMockLoader.config.logLevel }}"
+            - name: WIREMOCK_LOADER_WIREMOCK_URL
+              value: "{{ include "backend-mockado.wiremockUrl" . }}"
+            - name: WIREMOCK_LOADER_REDIS_URL
+              value: "{{ include "backend-mockado.redisUrl" . }}"
+            - name: WIREMOCK_LOADER_BATCH_SIZE
+              value: "{{ .Values.wireMockLoader.config.batchSize }}"
+            - name: WIREMOCK_LOADER_BATCH_TIMEOUT
+              value: "{{ .Values.wireMockLoader.config.batchTimeout }}"
+            - name: WIREMOCK_LOADER_MAX_CONCURRENT_REQUESTS
+              value: "{{ .Values.wireMockLoader.config.maxConcurrentRequests }}"
+            - name: WIREMOCK_LOADER_VALIDATE_MAPPINGS
+              value: "{{ .Values.wireMockLoader.config.validateMappings }}"
+            - name: WIREMOCK_LOADER_SKIP_INVALID_MAPPINGS
+              value: "{{ .Values.wireMockLoader.config.skipInvalidMappings }}"
+            - name: WIREMOCK_LOADER_BACKUP_MAPPINGS
+              value: "{{ .Values.wireMockLoader.config.backupMappings }}"
+            - name: WIREMOCK_LOADER_BACKUP_RETENTION_DAYS
+              value: "{{ .Values.wireMockLoader.config.backupRetentionDays }}"
+            - name: WIREMOCK_LOADER_ENABLE_METRICS
+              value: "{{ .Values.wireMockLoader.config.enableMetrics }}"
+            {{- if .Values.redis.auth.enabled }}
+            - name: WIREMOCK_LOADER_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "backend-mockado.fullname" . }}-redis
+                  key: redis-password
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.wireMockLoader.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.wireMockLoader.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.wireMockLoader.resources | nindent 12 }}
+          securityContext:
+            {{- include "backend-mockado.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+            - name: logs
+              mountPath: /app/logs
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "backend-mockado.fullname" . }}-wiremock-loader-config
+        - name: data
+          {{- if .Values.wireMockLoader.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "backend-mockado.fullname" . }}-wiremock-loader-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+      {{- include "backend-mockado.nodeSelector" .Values.wireMockLoader.nodeSelector }}
+      {{- include "backend-mockado.tolerations" .Values.wireMockLoader.tolerations }}
+      {{- include "backend-mockado.affinity" .Values.wireMockLoader.affinity }}
+{{- end }}

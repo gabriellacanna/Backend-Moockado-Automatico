@@ -1,0 +1,99 @@
+{{- if .Values.wiremock.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-wiremock
+  labels:
+    {{- include "backend-mockado.wiremock.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  replicas: {{ .Values.wiremock.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "backend-mockado.wiremock.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "backend-mockado.wiremock.selectorLabels" . | nindent 8 }}
+        {{- with .Values.commonLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- with .Values.commonAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "backend-mockado.imagePullSecrets" . }}
+      serviceAccountName: {{ include "backend-mockado.wiremock.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.wiremock.securityContext | nindent 8 }}
+      containers:
+        - name: wiremock
+          image: "{{ .Values.wiremock.image.registry }}/{{ .Values.wiremock.image.repository }}:{{ .Values.wiremock.image.tag }}"
+          imagePullPolicy: {{ .Values.wiremock.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.wiremock.service.port }}
+              protocol: TCP
+          args:
+            - --port={{ .Values.wiremock.service.port }}
+            - --root-dir=/home/wiremock
+            {{- if .Values.wiremock.config.globalResponseTemplating }}
+            - --global-response-templating
+            {{- end }}
+            {{- if .Values.wiremock.config.verbose }}
+            - --verbose
+            {{- end }}
+            - --max-request-journal-entries={{ .Values.wiremock.config.maxRequestJournalEntries }}
+            - --async-response-enabled
+            - --async-response-threads=10
+          env:
+            - name: JAVA_OPTS
+              value: "-Xmx256m -Xms128m"
+          livenessProbe:
+            httpGet:
+              path: /__admin/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /__admin/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.wiremock.resources | nindent 12 }}
+          securityContext:
+            {{- include "backend-mockado.containerSecurityContext" . | nindent 12 }}
+            # WireMock precisa escrever arquivos
+            readOnlyRootFilesystem: false
+          volumeMounts:
+            - name: wiremock-data
+              mountPath: /home/wiremock
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: wiremock-data
+          {{- if .Values.wiremock.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "backend-mockado.fullname" . }}-wiremock-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+      {{- include "backend-mockado.nodeSelector" .Values.wiremock.nodeSelector }}
+      {{- include "backend-mockado.tolerations" .Values.wiremock.tolerations }}
+      {{- include "backend-mockado.affinity" .Values.wiremock.affinity }}
+{{- end }}

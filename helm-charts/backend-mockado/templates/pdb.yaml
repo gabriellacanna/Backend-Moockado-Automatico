@@ -1,0 +1,53 @@
+{{- if .Values.collector.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-collector
+  labels:
+    {{- include "backend-mockado.collector.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if .Values.collector.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.collector.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if .Values.collector.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.collector.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "backend-mockado.collector.selectorLabels" . | nindent 6 }}
+{{- end }}
+
+{{- if .Values.wireMockLoader.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-wiremock-loader
+  labels:
+    {{- include "backend-mockado.wiremock-loader.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if .Values.wireMockLoader.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.wireMockLoader.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if .Values.wireMockLoader.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.wireMockLoader.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "backend-mockado.wiremock-loader.selectorLabels" . | nindent 6 }}
+{{- end }}

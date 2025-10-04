@@ -51,6 +51,50 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Create the name of the service account to use
+*/}}
+{{- define "backend-mockado.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "backend-mockado.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Create the name of the collector service account to use
+*/}}
+{{- define "backend-mockado.collector.serviceAccountName" -}}
+{{- if .Values.collector.serviceAccount.create }}
+{{- default (printf "%s-collector" (include "backend-mockado.fullname" .)) .Values.collector.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.collector.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Create the name of the wiremock-loader service account to use
+*/}}
+{{- define "backend-mockado.wiremock-loader.serviceAccountName" -}}
+{{- if .Values.wireMockLoader.serviceAccount.create }}
+{{- default (printf "%s-wiremock-loader" (include "backend-mockado.fullname" .)) .Values.wireMockLoader.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.wireMockLoader.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Create the name of the wiremock service account to use
+*/}}
+{{- define "backend-mockado.wiremock.serviceAccountName" -}}
+{{- if .Values.wiremock.serviceAccount.create }}
+{{- default (printf "%s-wiremock" (include "backend-mockado.fullname" .)) .Values.wiremock.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.wiremock.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
 Collector labels
 */}}
 {{- define "backend-mockado.collector.labels" -}}
@@ -99,175 +143,94 @@ app.kubernetes.io/component: wiremock
 {{- end }}
 
 {{/*
-Create the name of the service account to use
-*/}}
-{{- define "backend-mockado.serviceAccountName" -}}
-{{- if .Values.security.serviceAccount.create }}
-{{- default (include "backend-mockado.fullname" .) .Values.security.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.security.serviceAccount.name }}
-{{- end }}
-{{- end }}
-
-{{/*
-Create the name of the collector service account to use
-*/}}
-{{- define "backend-mockado.collector.serviceAccountName" -}}
-{{- if .Values.security.serviceAccount.create }}
-{{- printf "%s-collector" (include "backend-mockado.fullname" .) }}
-{{- else }}
-{{- default "default" .Values.security.serviceAccount.name }}
-{{- end }}
-{{- end }}
-
-{{/*
-Create the name of the wiremock-loader service account to use
-*/}}
-{{- define "backend-mockado.wiremock-loader.serviceAccountName" -}}
-{{- if .Values.security.serviceAccount.create }}
-{{- printf "%s-wiremock-loader" (include "backend-mockado.fullname" .) }}
-{{- else }}
-{{- default "default" .Values.security.serviceAccount.name }}
-{{- end }}
-{{- end }}
-
-{{/*
-Create the name of the wiremock service account to use
-*/}}
-{{- define "backend-mockado.wiremock.serviceAccountName" -}}
-{{- if .Values.security.serviceAccount.create }}
-{{- printf "%s-wiremock" (include "backend-mockado.fullname" .) }}
-{{- else }}
-{{- default "default" .Values.security.serviceAccount.name }}
-{{- end }}
-{{- end }}
-
-{{/*
-Get the Redis URL
+Redis URL
 */}}
 {{- define "backend-mockado.redisUrl" -}}
-{{- if .Values.redis.enabled }}
-{{- if .Values.redis.auth.enabled }}
-redis://:{{ .Values.redis.auth.password }}@{{ include "backend-mockado.fullname" . }}-redis-master:6379
+{{- if .Values.redis.external.enabled }}
+{{- .Values.redis.external.host }}:{{ .Values.redis.external.port }}
 {{- else }}
 redis://{{ include "backend-mockado.fullname" . }}-redis-master:6379
 {{- end }}
-{{- else }}
-redis://localhost:6379
-{{- end }}
 {{- end }}
 
 {{/*
-Get the WireMock URL
+WireMock URL
 */}}
 {{- define "backend-mockado.wiremockUrl" -}}
-{{- if .Values.wiremock.enabled }}
-http://{{ include "backend-mockado.fullname" . }}-wiremock:{{ .Values.wiremock.service.port }}
+{{- if .Values.wiremock.external.enabled }}
+{{- .Values.wiremock.external.url }}
 {{- else }}
-http://localhost:8080
+http://{{ include "backend-mockado.fullname" . }}-wiremock:{{ .Values.wiremock.service.port }}
 {{- end }}
 {{- end }}
 
 {{/*
-Create image pull secrets
+Image pull secrets
 */}}
 {{- define "backend-mockado.imagePullSecrets" -}}
-{{- with .Values.global.imagePullSecrets }}
+{{- if .Values.global.imagePullSecrets }}
 imagePullSecrets:
-{{- toYaml . | nindent 2 }}
+{{- range .Values.global.imagePullSecrets }}
+  - name: {{ . }}
 {{- end }}
+{{- else if .Values.imagePullSecrets }}
+imagePullSecrets:
+{{- range .Values.imagePullSecrets }}
+  - name: {{ . }}
 {{- end }}
-
-{{/*
-Get storage class name
-*/}}
-{{- define "backend-mockado.storageClassName" -}}
-{{- if .Values.global.storageClass }}
-{{- .Values.global.storageClass }}
-{{- else }}
-{{- "" }}
 {{- end }}
 {{- end }}
 
 {{/*
-Common security context
+Security context
 */}}
 {{- define "backend-mockado.securityContext" -}}
 runAsNonRoot: true
 runAsUser: 1000
 runAsGroup: 1000
 fsGroup: 1000
-seccompProfile:
-  type: RuntimeDefault
 {{- end }}
 
 {{/*
-Common container security context
+Container security context
 */}}
 {{- define "backend-mockado.containerSecurityContext" -}}
+allowPrivilegeEscalation: false
 capabilities:
   drop:
-    - ALL
+  - ALL
 readOnlyRootFilesystem: true
-allowPrivilegeEscalation: false
 runAsNonRoot: true
 runAsUser: 1000
 runAsGroup: 1000
-seccompProfile:
-  type: RuntimeDefault
 {{- end }}
 
 {{/*
-Common resource limits
-*/}}
-{{- define "backend-mockado.resources" -}}
-{{- if . }}
-resources:
-  {{- toYaml . | nindent 2 }}
-{{- end }}
-{{- end }}
-
-{{/*
-Common node selector
+Node selector
 */}}
 {{- define "backend-mockado.nodeSelector" -}}
 {{- if . }}
 nodeSelector:
-  {{- toYaml . | nindent 2 }}
+{{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end }}
 
 {{/*
-Common tolerations
+Tolerations
 */}}
 {{- define "backend-mockado.tolerations" -}}
 {{- if . }}
 tolerations:
-  {{- toYaml . | nindent 2 }}
+{{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end }}
 
 {{/*
-Common affinity
+Affinity
 */}}
 {{- define "backend-mockado.affinity" -}}
 {{- if . }}
 affinity:
-  {{- toYaml . | nindent 2 }}
-{{- end }}
-{{- end }}
-
-{{/*
-Validate configuration
-*/}}
-{{- define "backend-mockado.validateConfig" -}}
-{{- if and .Values.collector.enabled (not .Values.redis.enabled) }}
-{{- fail "Redis must be enabled when collector is enabled" }}
-{{- end }}
-{{- if and .Values.wireMockLoader.enabled (not .Values.wiremock.enabled) }}
-{{- fail "WireMock must be enabled when WireMock Loader is enabled" }}
-{{- end }}
-{{- if and .Values.wireMockLoader.enabled (not .Values.redis.enabled) }}
-{{- fail "Redis must be enabled when WireMock Loader is enabled" }}
+{{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end }}

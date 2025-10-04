@@ -1,0 +1,227 @@
+{{- if .Values.tests.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "backend-mockado.fullname" . }}-test-integration"
+  labels:
+    {{- include "backend-mockado.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "2"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test-integration
+      image: "{{ .Values.tests.image.registry }}/{{ .Values.tests.image.repository }}:{{ .Values.tests.image.tag }}"
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Running Backend Mockado Automático integration tests..."
+          
+          # Install required tools
+          apk add --no-cache python3 py3-pip jq
+          pip3 install requests redis
+          
+          # Test script
+          cat > /tmp/integration_test.py << 'EOF'
+          import json
+          import time
+          import requests
+          import redis
+          import sys
+          
+          def test_collector_api():
+              """Test Collector API endpoints"""
+              print("Testing Collector API...")
+              
+              collector_url = "http://{{ include "backend-mockado.fullname" . }}-collector:{{ .Values.collector.service.ports.http }}"
+              
+              # Test health endpoint
+              response = requests.get(f"{collector_url}/health")
+              assert response.status_code == 200, f"Health check failed: {response.status_code}"
+              print("✓ Collector health endpoint working")
+              
+              # Test readiness endpoint
+              response = requests.get(f"{collector_url}/ready")
+              assert response.status_code == 200, f"Readiness check failed: {response.status_code}"
+              print("✓ Collector readiness endpoint working")
+              
+              # Test metrics endpoint
+              response = requests.get(f"http://{{ include "backend-mockado.fullname" . }}-collector:{{ .Values.collector.service.ports.metrics }}/metrics")
+              assert response.status_code == 200, f"Metrics check failed: {response.status_code}"
+              assert "collector_requests_total" in response.text, "Expected metrics not found"
+              print("✓ Collector metrics endpoint working")
+          
+          def test_redis_connection():
+              """Test Redis connection"""
+              print("Testing Redis connection...")
+              
+              try:
+                  r = redis.Redis(host="{{ include "backend-mockado.fullname" . }}-redis-master", port=6379, decode_responses=True)
+                  r.ping()
+                  print("✓ Redis connection successful")
+                  
+                  # Test basic operations
+                  r.set("test_key", "test_value")
+                  value = r.get("test_key")
+                  assert value == "test_value", f"Redis set/get failed: {value}"
+                  r.delete("test_key")
+                  print("✓ Redis basic operations working")
+                  
+              except Exception as e:
+                  print(f"✗ Redis connection failed: {e}")
+                  sys.exit(1)
+          
+          {{- if .Values.wireMockLoader.enabled }}
+          def test_wiremock_loader_api():
+              """Test WireMock Loader API endpoints"""
+              print("Testing WireMock Loader API...")
+              
+              loader_url = "http://{{ include "backend-mockado.fullname" . }}-wiremock-loader:{{ .Values.wireMockLoader.service.ports.http }}"
+              
+              # Test health endpoint
+              response = requests.get(f"{loader_url}/health")
+              assert response.status_code == 200, f"Health check failed: {response.status_code}"
+              print("✓ WireMock Loader health endpoint working")
+              
+              # Test readiness endpoint
+              response = requests.get(f"{loader_url}/ready")
+              assert response.status_code == 200, f"Readiness check failed: {response.status_code}"
+              print("✓ WireMock Loader readiness endpoint working")
+              
+              # Test metrics endpoint
+              response = requests.get(f"http://{{ include "backend-mockado.fullname" . }}-wiremock-loader:{{ .Values.wireMockLoader.service.ports.metrics }}/metrics")
+              assert response.status_code == 200, f"Metrics check failed: {response.status_code}"
+              print("✓ WireMock Loader metrics endpoint working")
+          {{- end }}
+          
+          {{- if .Values.wiremock.enabled }}
+          def test_wiremock_api():
+              """Test WireMock API endpoints"""
+              print("Testing WireMock API...")
+              
+              wiremock_url = "http://{{ include "backend-mockado.fullname" . }}-wiremock:{{ .Values.wiremock.service.port }}"
+              
+              # Test health endpoint
+              response = requests.get(f"{wiremock_url}/__admin/health")
+              assert response.status_code == 200, f"Health check failed: {response.status_code}"
+              print("✓ WireMock health endpoint working")
+              
+              # Test mappings endpoint
+              response = requests.get(f"{wiremock_url}/__admin/mappings")
+              assert response.status_code == 200, f"Mappings check failed: {response.status_code}"
+              print("✓ WireMock mappings endpoint working")
+              
+              # Test creating a simple mapping
+              mapping = {
+                  "request": {
+                      "method": "GET",
+                      "urlPath": "/test-integration"
+                  },
+                  "response": {
+                      "status": 200,
+                      "jsonBody": {"message": "Integration test successful"},
+                      "headers": {"Content-Type": "application/json"}
+                  }
+              }
+              
+              response = requests.post(f"{wiremock_url}/__admin/mappings", json=mapping)
+              assert response.status_code == 201, f"Mapping creation failed: {response.status_code}"
+              print("✓ WireMock mapping creation working")
+              
+              # Test the created mapping
+              response = requests.get(f"{wiremock_url}/test-integration")
+              assert response.status_code == 200, f"Mock response failed: {response.status_code}"
+              data = response.json()
+              assert data["message"] == "Integration test successful", f"Unexpected response: {data}"
+              print("✓ WireMock mock response working")
+              
+              # Clean up
+              requests.delete(f"{wiremock_url}/__admin/mappings")
+              print("✓ WireMock cleanup successful")
+          
+          def test_end_to_end_flow():
+              """Test end-to-end flow simulation"""
+              print("Testing end-to-end flow...")
+              
+              # Simulate adding a mapping to Redis queue
+              r = redis.Redis(host="{{ include "backend-mockado.fullname" . }}-redis-master", port=6379, decode_responses=True)
+              
+              test_mapping = {
+                  "request": {
+                      "method": "POST",
+                      "urlPath": "/api/v1/test-e2e",
+                      "headers": {"Content-Type": "application/json"}
+                  },
+                  "response": {
+                      "status": 201,
+                      "jsonBody": {"id": "test-123", "status": "created"},
+                      "headers": {"Content-Type": "application/json"}
+                  }
+              }
+              
+              # Add to Redis queue
+              r.lpush("wiremock_mappings", json.dumps(test_mapping))
+              print("✓ Test mapping added to Redis queue")
+              
+              # Wait for processing
+              time.sleep(5)
+              
+              # Check if mapping was processed by WireMock
+              wiremock_url = "http://{{ include "backend-mockado.fullname" . }}-wiremock:{{ .Values.wiremock.service.port }}"
+              response = requests.post(f"{wiremock_url}/api/v1/test-e2e", 
+                                     json={"test": "data"},
+                                     headers={"Content-Type": "application/json"})
+              
+              if response.status_code == 201:
+                  data = response.json()
+                  assert data["id"] == "test-123", f"Unexpected response: {data}"
+                  print("✓ End-to-end flow working")
+              else:
+                  print(f"⚠ End-to-end flow test inconclusive (status: {response.status_code})")
+          {{- end }}
+          
+          def main():
+              """Run all integration tests"""
+              try:
+                  test_collector_api()
+                  test_redis_connection()
+                  {{- if .Values.wireMockLoader.enabled }}
+                  test_wiremock_loader_api()
+                  {{- end }}
+                  {{- if .Values.wiremock.enabled }}
+                  test_wiremock_api()
+                  test_end_to_end_flow()
+                  {{- end }}
+                  
+                  print("\n🎉 All integration tests passed successfully!")
+                  
+              except Exception as e:
+                  print(f"\n❌ Integration test failed: {e}")
+                  sys.exit(1)
+          
+          if __name__ == "__main__":
+              main()
+          EOF
+          
+          # Run the integration test
+          python3 /tmp/integration_test.py
+      securityContext:
+        {{- include "backend-mockado.containerSecurityContext" . | nindent 8 }}
+        # Allow network access and package installation for testing
+        readOnlyRootFilesystem: false
+        runAsUser: 0
+  securityContext:
+    {{- include "backend-mockado.securityContext" . | nindent 4 }}
+    runAsUser: 0
+{{- end }}

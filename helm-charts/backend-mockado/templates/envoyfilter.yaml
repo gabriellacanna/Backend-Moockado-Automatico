@@ -1,0 +1,249 @@
+{{- if .Values.envoyFilters.enabled }}
+{{- if .Values.envoyFilters.global }}
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-tap-filter-global
+  labels:
+    {{- include "backend-mockado.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+      listener:
+        filterChain:
+          filter:
+            name: "envoy.filters.network.http_connection_manager"
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.tap
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.tap.v3.Tap
+          common_config:
+            static_config:
+              match_config:
+                or_match:
+                  rules:
+                  {{- range .Values.envoyFilters.tapFilter.matching.methods }}
+                  - http_request_headers_match:
+                      headers:
+                      - name: ":method"
+                        string_match:
+                          exact: {{ . }}
+                  {{- end }}
+                  {{- range .Values.envoyFilters.tapFilter.matching.pathPatterns }}
+                  - http_request_headers_match:
+                      headers:
+                      - name: ":path"
+                        string_match:
+                          safe_regex:
+                            google_re2: {}
+                            regex: {{ . | quote }}
+                  {{- end }}
+                not_match:
+                  or_match:
+                    rules:
+                    {{- range .Values.envoyFilters.tapFilter.matching.excludePaths }}
+                    - http_request_headers_match:
+                        headers:
+                        - name: ":path"
+                          string_match:
+                            safe_regex:
+                              google_re2: {}
+                              regex: {{ . | quote }}
+                    {{- end }}
+              output_config:
+                sinks:
+                - streaming_grpc:
+                    tap_id: "backend-mockado-tap"
+                    grpc_service:
+                      envoy_grpc:
+                        cluster_name: backend-mockado-collector
+                    buffer_size_bytes: {{ .Values.envoyFilters.tapFilter.bufferSizeBytes }}
+                    flush_timeout: {{ .Values.envoyFilters.tapFilter.flushTimeout }}
+  - applyTo: CLUSTER
+    match:
+      context: SIDECAR_INBOUND
+    patch:
+      operation: ADD
+      value:
+        name: backend-mockado-collector
+        type: STRICT_DNS
+        connect_timeout: 5s
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          cluster_name: backend-mockado-collector
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: {{ include "backend-mockado.fullname" . }}-collector.{{ .Release.Namespace }}.svc.cluster.local
+                    port_value: {{ .Values.collector.service.ports.grpc }}
+        http2_protocol_options: {}
+{{- else }}
+{{- range .Values.envoyFilters.namespaces }}
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: {{ include "backend-mockado.fullname" $ }}-tap-filter-{{ . }}
+  namespace: {{ . }}
+  labels:
+    {{- include "backend-mockado.labels" $ | nindent 4 }}
+    {{- with $.Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with $.Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+      listener:
+        filterChain:
+          filter:
+            name: "envoy.filters.network.http_connection_manager"
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.tap
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.tap.v3.Tap
+          common_config:
+            static_config:
+              match_config:
+                or_match:
+                  rules:
+                  {{- range $.Values.envoyFilters.tapFilter.matching.methods }}
+                  - http_request_headers_match:
+                      headers:
+                      - name: ":method"
+                        string_match:
+                          exact: {{ . }}
+                  {{- end }}
+                  {{- range $.Values.envoyFilters.tapFilter.matching.pathPatterns }}
+                  - http_request_headers_match:
+                      headers:
+                      - name: ":path"
+                        string_match:
+                          safe_regex:
+                            google_re2: {}
+                            regex: {{ . | quote }}
+                  {{- end }}
+                not_match:
+                  or_match:
+                    rules:
+                    {{- range $.Values.envoyFilters.tapFilter.matching.excludePaths }}
+                    - http_request_headers_match:
+                        headers:
+                        - name: ":path"
+                          string_match:
+                            safe_regex:
+                              google_re2: {}
+                              regex: {{ . | quote }}
+                    {{- end }}
+              output_config:
+                sinks:
+                - streaming_grpc:
+                    tap_id: "backend-mockado-tap-{{ . }}"
+                    grpc_service:
+                      envoy_grpc:
+                        cluster_name: backend-mockado-collector
+                    buffer_size_bytes: {{ $.Values.envoyFilters.tapFilter.bufferSizeBytes }}
+                    flush_timeout: {{ $.Values.envoyFilters.tapFilter.flushTimeout }}
+  - applyTo: CLUSTER
+    match:
+      context: SIDECAR_INBOUND
+    patch:
+      operation: ADD
+      value:
+        name: backend-mockado-collector
+        type: STRICT_DNS
+        connect_timeout: 5s
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          cluster_name: backend-mockado-collector
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: {{ include "backend-mockado.fullname" $ }}-collector.{{ $.Release.Namespace }}.svc.cluster.local
+                    port_value: {{ $.Values.collector.service.ports.grpc }}
+        http2_protocol_options: {}
+{{- end }}
+{{- end }}
+
+---
+# ConfigMap com configurações do tap filter
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-tap-config
+  labels:
+    {{- include "backend-mockado.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  tap-config.yaml: |
+    # Configurações do Envoy Tap Filter
+    tap_filter:
+      # Taxa de amostragem (0.0 a 1.0)
+      sample_rate: {{ .Values.envoyFilters.tapFilter.sampleRate }}
+      
+      # Tamanho do buffer
+      buffer_size_bytes: {{ .Values.envoyFilters.tapFilter.bufferSizeBytes }}
+      
+      # Timeout do flush
+      flush_timeout: {{ .Values.envoyFilters.tapFilter.flushTimeout }}
+      
+      # Configurações de matching
+      matching:
+        methods:
+        {{- range .Values.envoyFilters.tapFilter.matching.methods }}
+        - {{ . }}
+        {{- end }}
+        
+        path_patterns:
+        {{- range .Values.envoyFilters.tapFilter.matching.pathPatterns }}
+        - {{ . | quote }}
+        {{- end }}
+        
+        exclude_paths:
+        {{- range .Values.envoyFilters.tapFilter.matching.excludePaths }}
+        - {{ . | quote }}
+        {{- end }}
+      
+      # Configurações do collector
+      collector:
+        service: {{ include "backend-mockado.fullname" . }}-collector
+        namespace: {{ .Release.Namespace }}
+        grpc_port: {{ .Values.collector.service.ports.grpc }}
+        
+      # Configurações de deployment
+      deployment:
+        global: {{ .Values.envoyFilters.global }}
+        namespaces:
+        {{- range .Values.envoyFilters.namespaces }}
+        - {{ . }}
+        {{- end }}
+{{- end }}

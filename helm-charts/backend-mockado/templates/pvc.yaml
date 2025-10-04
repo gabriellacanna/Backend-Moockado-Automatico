@@ -1,0 +1,104 @@
+{{- if .Values.collector.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-collector-data
+  labels:
+    {{- include "backend-mockado.collector.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.collector.persistence.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.collector.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.collector.persistence.size }}
+  {{- if .Values.collector.persistence.storageClass }}
+  {{- if (eq "-" .Values.collector.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.collector.persistence.storageClass }}
+  {{- end }}
+  {{- else if .Values.global.storageClass }}
+  storageClassName: {{ .Values.global.storageClass }}
+  {{- end }}
+{{- end }}
+
+{{- if .Values.wireMockLoader.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-wiremock-loader-data
+  labels:
+    {{- include "backend-mockado.wiremock-loader.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.wireMockLoader.persistence.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.wireMockLoader.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.wireMockLoader.persistence.size }}
+  {{- if .Values.wireMockLoader.persistence.storageClass }}
+  {{- if (eq "-" .Values.wireMockLoader.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.wireMockLoader.persistence.storageClass }}
+  {{- end }}
+  {{- else if .Values.global.storageClass }}
+  storageClassName: {{ .Values.global.storageClass }}
+  {{- end }}
+{{- end }}
+
+{{- if .Values.wiremock.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-wiremock-data
+  labels:
+    {{- include "backend-mockado.wiremock.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.wiremock.persistence.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.wiremock.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.wiremock.persistence.size }}
+  {{- if .Values.wiremock.persistence.storageClass }}
+  {{- if (eq "-" .Values.wiremock.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.wiremock.persistence.storageClass }}
+  {{- end }}
+  {{- else if .Values.global.storageClass }}
+  storageClassName: {{ .Values.global.storageClass }}
+  {{- end }}
+{{- end }}

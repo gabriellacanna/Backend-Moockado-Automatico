@@ -1,0 +1,31 @@
+{{- if .Values.wireMockLoader.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-wiremock-loader
+  labels:
+    {{- include "backend-mockado.wiremock-loader.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.wireMockLoader.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: {{ .Values.wireMockLoader.service.type }}
+  ports:
+    - port: {{ .Values.wireMockLoader.service.ports.http }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.wireMockLoader.service.ports.metrics }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "backend-mockado.wiremock-loader.selectorLabels" . | nindent 4 }}
+{{- end }}

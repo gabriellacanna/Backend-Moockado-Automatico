@@ -1,0 +1,89 @@
+{{- if .Values.wireMockLoader.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "backend-mockado.fullname" . }}-wiremock-loader-config
+  labels:
+    {{- include "backend-mockado.wiremock-loader.labels" . | nindent 4 }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  wiremock-loader.yaml: |
+    wiremock_loader:
+      # Configurações do servidor
+      host: "0.0.0.0"
+      port: {{ .Values.wireMockLoader.service.ports.http }}
+      
+      # Configurações de logging
+      log_level: "{{ .Values.wireMockLoader.config.logLevel }}"
+      log_format: "json"
+      
+      # Configurações do WireMock
+      wiremock_url: "{{ include "backend-mockado.wiremockUrl" . }}"
+      wiremock_admin_path: "/__admin"
+      wiremock_timeout: 30
+      wiremock_retry_attempts: 3
+      wiremock_retry_delay: 1.0
+      
+      # Configurações do Redis
+      redis_url: "{{ include "backend-mockado.redisUrl" . }}"
+      redis_db: 1
+      
+      # Configurações de processamento
+      batch_size: {{ .Values.wireMockLoader.config.batchSize }}
+      batch_timeout: {{ .Values.wireMockLoader.config.batchTimeout }}
+      max_concurrent_requests: {{ .Values.wireMockLoader.config.maxConcurrentRequests }}
+      
+      # Configurações de fila
+      queue_name: "wiremock_mappings"
+      queue_consumer_group: "wiremock_loader"
+      queue_max_retries: 3
+      
+      # Configurações de validação
+      validate_mappings: {{ .Values.wireMockLoader.config.validateMappings }}
+      skip_invalid_mappings: {{ .Values.wireMockLoader.config.skipInvalidMappings }}
+      
+      # Configurações de backup
+      backup_mappings: {{ .Values.wireMockLoader.config.backupMappings }}
+      backup_path: "/app/data/backups"
+      backup_retention_days: {{ .Values.wireMockLoader.config.backupRetentionDays }}
+      
+      # Configurações de monitoramento
+      enable_metrics: {{ .Values.wireMockLoader.config.enableMetrics }}
+      metrics_port: {{ .Values.wireMockLoader.service.ports.metrics }}
+      
+      # Configurações de segurança
+      allowed_origins:
+        - "*"
+    
+    # Regras de validação para mappings
+    validation_rules:
+      - name: "required_fields"
+        type: "required_fields"
+        config:
+          fields:
+            - "request.method"
+            - "request.urlPath"
+            - "response.status"
+      
+      - name: "url_patterns"
+        type: "url_pattern"
+        config:
+          forbidden_patterns:
+            - "/__admin.*"
+            - "/health.*"
+            - "/metrics.*"
+            - "/ready.*"
+            - "/live.*"
+          required_patterns: []
+      
+      - name: "response_structure"
+        type: "response_structure"
+        config:
+          require_body: false
+{{- end }}
